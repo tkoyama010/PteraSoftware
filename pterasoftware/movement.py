@@ -39,6 +39,7 @@ from scipy import signal
 
 from . import geometry
 from . import operating_point
+from . import functions
 
 
 class Movement:
@@ -691,6 +692,9 @@ class WingMovement:
                 base_wing_cross_section = (
                     wing_cross_section_movement.base_wing_cross_section
                 )
+                inner_base_wing_cross_section = inner_wing_cross_sections_time_history[
+                    0
+                ]
 
                 base_x_le = base_wing_cross_section.x_le
                 base_y_le = base_wing_cross_section.y_le
@@ -709,34 +713,94 @@ class WingMovement:
                     inner_y_les.append(inner_wing_cross_section.y_le)
                     inner_z_les.append(inner_wing_cross_section.z_le)
 
-                # Find the span between this wing cross section and the inner wing
-                # cross section at the first time step.
-                base_wing_section_span = np.sqrt(
-                    (base_x_le - inner_x_les[0]) ** 2
-                    + (base_y_le - inner_y_les[0]) ** 2
-                    + (base_z_le - inner_z_les[0]) ** 2
+                # Find the span between this base wing cross section and the inner
+                # base wing cross section. This done by projecting the vector
+                # connecting their leading edges onto the plane defined by the inner
+                # base wing cross section's unit normal vector. The length of the
+                # projection is this wing section's span.
+                base_wing_section_leading_edge = (
+                    base_wing_cross_section.leading_edge
+                    - inner_base_wing_cross_section.leading_edge
+                )
+
+                base_wing_section_projected_leading_edge = (
+                    np.dot(
+                        base_wing_section_leading_edge,
+                        inner_base_wing_cross_section.unit_normal_vector,
+                    )
+                    * inner_base_wing_cross_section.unit_normal_vector
+                )
+
+                base_wing_section_span = np.linalg.norm(
+                    base_wing_section_projected_leading_edge
                 )
 
                 if base_y_le != inner_y_les[0]:
                     # Find the base sweep angle of this wing cross section compared
                     # to the inner wing cross section at the first time step.
+                    # base_wing_section_sweep = (
+                    #     np.arctan(
+                    #         (base_z_le - inner_z_les[0]) / (base_y_le - inner_y_les[0])
+                    #     )
+                    #     * 180
+                    #     / np.pi
+                    # )
+
+                    # Find the base heave angle of this wing cross section compared
+                    # to the inner wing cross section at the first time step.
+                    # base_wing_section_heave = (
+                    #     np.arctan(
+                    #         (base_x_le - inner_x_les[0]) / (base_y_le - inner_y_les[0])
+                    #     )
+                    #     * 180
+                    #     / np.pi
+                    # )
+
+                    inner_normal = inner_base_wing_cross_section.unit_normal_vector
+                    inner_up = inner_base_wing_cross_section.unit_up_vector
+                    inner_chordwise = (
+                        inner_base_wing_cross_section.unit_chordwise_vector
+                    )
+
+                    normal = base_wing_cross_section.unit_normal_vector
+                    up = base_wing_cross_section.unit_up_vector
+                    chordwise = base_wing_cross_section.unit_chordwise_vector
+
+                    proj_normal_on_inner_chordwise = (
+                        np.dot(normal, inner_chordwise) * inner_chordwise
+                    )
+                    proj_normal_on_inner_normal_up = (
+                        normal - proj_normal_on_inner_chordwise
+                    )
                     base_wing_section_sweep = (
-                        np.arctan(
-                            (base_z_le - inner_z_les[0]) / (base_y_le - inner_y_les[0])
+                        np.arccos(np.dot(proj_normal_on_inner_normal_up, inner_normal))
+                        * 180
+                        / np.pi
+                    )
+
+                    proj_up_on_inner_normal = np.dot(up, inner_normal) * inner_normal
+                    proj_up_on_inner_up_chordwise = up - proj_up_on_inner_normal
+                    base_wing_section_pitch = (
+                        np.arccos(np.dot(proj_up_on_inner_up_chordwise, inner_up))
+                        * 180
+                        / np.pi
+                    )
+
+                    proj_chordwise_on_inner_up = np.dot(chordwise, inner_up) * inner_up
+                    proj_chordwise_on_inner_chordwise_normal = (
+                        chordwise - proj_chordwise_on_inner_up
+                    )
+                    base_wing_section_heave = (
+                        np.arccos(
+                            np.dot(
+                                proj_chordwise_on_inner_chordwise_normal,
+                                inner_chordwise,
+                            )
                         )
                         * 180
                         / np.pi
                     )
 
-                    # Find the base heave angle of this wing cross section compared
-                    # to the inner wing cross section at the first time step.
-                    base_wing_section_heave = (
-                        np.arctan(
-                            (base_x_le - inner_x_les[0]) / (base_y_le - inner_y_les[0])
-                        )
-                        * 180
-                        / np.pi
-                    )
                 else:
                     base_wing_section_sweep = 0.0
                     base_wing_section_heave = 0.0
@@ -746,6 +810,7 @@ class WingMovement:
             # each time step based on its movement.
             wing_cross_sections_time_history = np.array(
                 wing_cross_section_movement.generate_wing_cross_sections(
+                    inner_base_wing_cross_section=inner_base_wing_cross_section,
                     num_steps=num_steps,
                     delta_time=delta_time,
                     base_wing_section_span=base_wing_section_span,
@@ -755,6 +820,7 @@ class WingMovement:
                     inner_y_les=inner_y_les,
                     inner_z_les=inner_z_les,
                     wing_section_is_vertical=wing_section_is_vertical,
+                    wing_unit_chordwise_vector=self.base_wing.unit_chordwise_vector,
                 )
             )
 
@@ -966,6 +1032,7 @@ class WingCrossSectionMovement:
 
     def generate_wing_cross_sections(
         self,
+        inner_base_wing_cross_section,
         num_steps=10,
         delta_time=0.1,
         inner_x_les=None,
@@ -975,6 +1042,7 @@ class WingCrossSectionMovement:
         base_wing_section_span=0.0,
         base_wing_section_sweep=0.0,
         base_wing_section_heave=0.0,
+        wing_unit_chordwise_vector=None,
     ):
         """This method creates the wing cross section objects at each time
         current_step, and groups them into a list.
@@ -1174,6 +1242,18 @@ class WingCrossSectionMovement:
             )
             twist_list = pitching_list
 
+            sweep_rot_mats = functions.angle_axis_rotation_matrix(
+                sweeping_list, inner_base_wing_cross_section.unit_chordwise_vector
+            )
+            heave_rot_mats = functions.angle_axis_rotation_matrix(
+                heaving_list, inner_base_wing_cross_section.unit_up_vector
+            )
+            pitch_rot_mats = functions.angle_axis_rotation_matrix(
+                pitching_list, inner_base_wing_cross_section.unit_normal_vector
+            )
+
+            rot_mats = pitch_rot_mats @ heave_rot_mats @ sweep_rot_mats
+
         # Create an empty list of wing cross sections.
         wing_cross_sections = []
 
@@ -1211,6 +1291,10 @@ class WingCrossSectionMovement:
                 control_surface_deflection=control_surface_deflection,
                 num_spanwise_panels=num_spanwise_panels,
                 spanwise_spacing=spanwise_spacing,
+            )
+
+            this_wing_cross_section.wing_unit_chordwise_vector = (
+                wing_unit_chordwise_vector
             )
 
             # Add this new object to the list of wing cross sections.
