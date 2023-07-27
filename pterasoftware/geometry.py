@@ -313,6 +313,7 @@ class Wing:
 
             # Find the vector parallel to the intersection of this wing cross
             # section's plane and the wing's symmetry plane.
+            # ToDo: What happens if the two planes don't intersect?
             plane_intersection_vector = np.cross(
                 self.unit_normal_vector, wing_cross_section.unit_normal_vector
             )
@@ -650,6 +651,8 @@ class WingCrossSection:
             This is the unit vector for the wing cross section's chordwise direction.
             The units are meters.
         """
+        # ToDo: Check if this is correct. Doesn't this make the unit-up vector point
+        #  down?
         return np.cross(self.unit_chordwise_vector, self.unit_normal_vector)
 
     @property

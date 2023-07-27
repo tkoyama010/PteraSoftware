@@ -669,6 +669,8 @@ class WingMovement:
         ) in enumerate(self.wing_cross_section_movements):
             wing_section_is_vertical = False
 
+            inner_base_wing_cross_section = None
+
             # Check if this is this wing's root cross section.
             if wing_cross_section_movement_location == 0:
 
